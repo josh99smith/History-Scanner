@@ -107,3 +107,53 @@ def test_error_is_surfaced(client, monkeypatch):
 
 def test_job_not_found(client):
     assert client.get("/api/jobs/does-not-exist").status_code == 404
+
+
+# ── Auth / public-hosting gate ────────────────────────────────────────────────
+
+
+@pytest.fixture
+def auth_client(monkeypatch, tmp_path):
+    from app import auth, config
+
+    monkeypatch.setattr(config.settings, "access_password", "letmein")
+    monkeypatch.setattr(auth.settings, "access_password", "letmein")
+    marker_runner.job_manager._data_dir = tmp_path
+    monkeypatch.setattr(main, "marker_available", lambda: True)
+    return TestClient(main.app)
+
+
+def test_health_open_without_login(auth_client):
+    # Health stays reachable (for uptime probes) even with auth on.
+    res = auth_client.get("/api/health")
+    assert res.status_code == 200
+    assert res.json()["auth_enabled"] is True
+
+
+def test_api_blocked_without_login(auth_client):
+    res = auth_client.post(
+        "/api/scan", files={"file": ("a.png", b"x", "image/png")}
+    )
+    assert res.status_code == 401
+
+
+def test_ui_shows_login_when_unauthed(auth_client):
+    res = auth_client.get("/")
+    assert res.status_code == 401
+    assert "Sign in" in res.text
+
+
+def test_wrong_password_rejected(auth_client):
+    res = auth_client.post("/login", data={"password": "nope"})
+    assert res.status_code == 401
+    assert "Incorrect" in res.text
+
+
+def test_login_then_access(auth_client):
+    res = auth_client.post(
+        "/login", data={"password": "letmein"}, follow_redirects=False
+    )
+    assert res.status_code == 303
+    # Cookie is now stored on the client; the UI and API are reachable.
+    assert auth_client.get("/").status_code == 200
+    assert "History Scanner" in auth_client.get("/").text

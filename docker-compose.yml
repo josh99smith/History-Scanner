@@ -31,6 +31,24 @@ services:
               count: 1
               capabilities: [gpu]
 
+  # Public access: a Cloudflare tunnel that exposes the app on a public HTTPS URL
+  # reachable from your phone anywhere — no port-forwarding, no static IP.
+  #   • Quick tunnel (random *.trycloudflare.com URL):  docker compose --profile public up
+  #     then read the printed https://<random>.trycloudflare.com URL from the logs.
+  #   • Stable named tunnel: set TUNNEL_TOKEN in .env (from the Cloudflare dashboard).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["public"]
+    command: >
+      sh -c 'if [ -n "$$TUNNEL_TOKEN" ];
+             then cloudflared tunnel --no-autoupdate run --token "$$TUNNEL_TOKEN";
+             else cloudflared tunnel --no-autoupdate --url http://history-scanner:8000; fi'
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      - history-scanner
+    restart: unless-stopped
+
 volumes:
   marker-models:
   scanner-data:

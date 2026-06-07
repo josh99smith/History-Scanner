@@ -57,6 +57,62 @@ docker compose --profile gpu up history-scanner-gpu
 
 [NVIDIA Container Toolkit]: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
 
+## 📱 View it on your phone (public hosting)
+
+The app binds to all interfaces and ships with a **password gate** and a
+**Cloudflare tunnel**, so you can reach the full OCR app from your phone anywhere —
+no port-forwarding, no static IP.
+
+**1. Set a password** (so only you can use it — every scan spends your LLM budget):
+
+```bash
+# in .env
+ACCESS_PASSWORD=choose-a-strong-password
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+**2. Start the app + a public tunnel:**
+
+```bash
+docker compose --profile public up --build
+```
+
+**3. Grab the public URL** from the logs — look for a line like:
+
+```
+https://random-words-1234.trycloudflare.com
+```
+
+Open that on your phone, enter the password, and scan. The URL is HTTPS, so the
+mobile UI and copy-to-clipboard work fully.
+
+> **Stable URL?** A `trycloudflare.com` URL is random and changes each restart.
+> For a permanent address on your own domain, create a *named* tunnel in the
+> [Cloudflare dashboard], set its public hostname to point at
+> `http://history-scanner:8000`, and put its token in `.env` as `TUNNEL_TOKEN`.
+
+[Cloudflare dashboard]: https://one.dash.cloudflare.com/
+
+### Where to run it
+
+The tunnel just exposes whatever machine runs the container, so run it on:
+
+- **Your own computer** (a desktop with a GPU is ideal — CPU works but is slow).
+- **A cloud GPU host** (RunPod, Lambda, Vast.ai, a GPU VPS…). Install Docker,
+  clone this repo, and run the same `docker compose --profile public up` command.
+
+Either way the public URL is reachable from your phone. Keep the machine awake
+and the container running for the link to stay live.
+
+### Security notes for public deployments
+
+- **Always set `ACCESS_PASSWORD`** before exposing the app — an open endpoint lets
+  anyone burn your Claude API budget.
+- The password gates the entire UI and API (`/api/health` stays open for uptime
+  probes). Session is a signed, HTTP-only cookie; sign out from the header link.
+- Consider lowering `MAX_UPLOAD_MB` and keeping `MAX_CONCURRENT_JOBS=1` to bound
+  resource use.
+
 ## Quick start (local Python)
 
 Requires **Python 3.10+** and [PyTorch](https://pytorch.org/get-started/locally/).
@@ -91,6 +147,8 @@ All settings live in `.env` (see `.env.example`):
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `ACCESS_PASSWORD` | — | If set, gates the whole app behind a login. **Set this before public hosting.** |
+| `TUNNEL_TOKEN` | — | Cloudflare named-tunnel token for a stable public URL (optional). |
 | `ANTHROPIC_API_KEY` | — | Claude key used for LLM enhancement. |
 | `CLAUDE_MODEL_NAME` | `claude-sonnet-4-6` | Claude model marker calls. |
 | `MARKER_LLM_SERVICE` | `marker.services.claude.ClaudeService` | marker LLM provider. |
@@ -107,7 +165,8 @@ The UI is a thin client over a small JSON API:
 
 | Method & path | Description |
 | --- | --- |
-| `GET /api/health` | Engine status, LLM config, limits. |
+| `GET /api/health` | Engine status, LLM config, limits, whether auth is on. |
+| `GET/POST /login`, `POST /logout` | Password gate (only when `ACCESS_PASSWORD` is set). |
 | `POST /api/scan` | Multipart upload (`file`, `use_llm`, `force_ocr`, `output_format`, `languages`). Returns `202` + `job_id`. |
 | `GET /api/jobs/{id}` | Job status; includes the transcribed `text` once `done`. |
 | `GET /api/jobs/{id}/download` | Download the result file. |

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>History Scanner — Sign in</title>
+<style>
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    color: #2b2118; background: #f4ecd8;
+    background-image: radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px); background-size: 4px 4px;
+    padding: 1rem;
+  }
+  .box {
+    background: #e8dcc0; border: 1px solid #cbb894; border-radius: 10px;
+    padding: 2rem; width: 100%; max-width: 360px; text-align: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+  }
+  h1 { margin: 0 0 0.25rem; font-size: 1.6rem; }
+  p { margin: 0 0 1.5rem; font-style: italic; opacity: 0.8; }
+  input[type=password] {
+    width: 100%; font-family: inherit; font-size: 1rem; padding: 0.7rem 0.8rem;
+    border: 1px solid #cbb894; border-radius: 6px; background: #fff8ec; margin-bottom: 1rem;
+  }
+  button {
+    width: 100%; background: #8a5a2b; color: #fff8ec; border: none; font-family: inherit;
+    font-size: 1.05rem; font-weight: 600; padding: 0.7rem; border-radius: 6px; cursor: pointer;
+  }
+  button:hover { background: #6b4420; }
+  .error { color: #a33b2a; font-weight: 600; margin-bottom: 1rem; min-height: 1.2em; }
+</style>
+</head>
+<body>
+  <form class="box" method="post" action="/login">
+    <h1>📜 History Scanner</h1>
+    <p>Enter the access password to continue</p>
+    <div class="error">{{ERROR}}</div>
+    <input type="password" name="password" placeholder="Password" autofocus required autocomplete="current-password" />
+    <button type="submit">Sign in</button>
+  </form>
+</body>
+</html>

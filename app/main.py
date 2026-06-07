@@ -5,10 +5,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+)
 
 from . import __version__
+from .auth import COOKIE_NAME, COOKIE_MAX_AGE, check_password, cookie_is_valid, issue_cookie_value
 from .config import settings
 from .marker_runner import (
     SUPPORTED_OUTPUT_FORMATS,
@@ -23,6 +29,63 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 app = FastAPI(title="History Scanner", version=__version__)
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+# Paths reachable without a session when the password gate is on.
+_PUBLIC_PATHS = {"/login", "/api/health", "/favicon.ico"}
+
+
+def _is_secure(request: Request) -> bool:
+    """True when the request reached us over HTTPS (directly or via a proxy)."""
+    if request.url.scheme == "https":
+        return True
+    return request.headers.get("x-forwarded-proto", "").split(",")[0].strip() == "https"
+
+
+@app.middleware("http")
+async def auth_gate(request: Request, call_next):
+    if not settings.auth_enabled or request.url.path in _PUBLIC_PATHS:
+        return await call_next(request)
+    if cookie_is_valid(request.cookies.get(COOKIE_NAME)):
+        return await call_next(request)
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": "Unauthorized. Please log in."}, status_code=401)
+    return HTMLResponse(_login_page(), status_code=401)
+
+
+def _login_page(error: str = "") -> str:
+    return (STATIC_DIR / "login.html").read_text(encoding="utf-8").replace(
+        "{{ERROR}}", error
+    )
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_form() -> HTMLResponse:
+    if not settings.auth_enabled:
+        return HTMLResponse('<meta http-equiv="refresh" content="0; url=/">')
+    return HTMLResponse(_login_page())
+
+
+@app.post("/login")
+def login_submit(request: Request, password: str = Form(...)) -> Response:
+    if not check_password(password):
+        return HTMLResponse(_login_page("Incorrect password."), status_code=401)
+    resp = RedirectResponse(url="/", status_code=303)
+    resp.set_cookie(
+        COOKIE_NAME,
+        issue_cookie_value(),
+        max_age=COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=_is_secure(request),
+    )
+    return resp
+
+
+@app.post("/logout")
+def logout() -> Response:
+    resp = RedirectResponse(url="/login", status_code=303)
+    resp.delete_cookie(COOKIE_NAME)
+    return resp
 
 # Input types marker can handle (with the [full] extra installed).
 ALLOWED_EXTENSIONS = {
@@ -54,6 +117,7 @@ def health() -> JSONResponse:
             },
             "output_formats": list(SUPPORTED_OUTPUT_FORMATS),
             "max_upload_mb": settings.max_upload_mb,
+            "auth_enabled": settings.auth_enabled,
         }
     )
 

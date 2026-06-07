@@ -39,6 +39,13 @@ class Settings:
         default_factory=lambda: os.getenv("CLAUDE_MODEL_NAME", "claude-sonnet-4-6")
     )
 
+    # Access control. When ACCESS_PASSWORD is set, the whole app (UI + API) is
+    # gated behind a login — essential before exposing it on the public internet,
+    # since every scan spends your LLM API budget.
+    access_password: str | None = field(
+        default_factory=lambda: os.getenv("ACCESS_PASSWORD") or None
+    )
+
     # Default scan options (overridable per request from the UI)
     default_use_llm: bool = field(
         default_factory=lambda: _as_bool(os.getenv("DEFAULT_USE_LLM"), True)
@@ -60,6 +67,10 @@ class Settings:
     data_dir: str = field(
         default_factory=lambda: os.getenv("DATA_DIR", "/tmp/history-scanner")
     )
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.access_password)
 
     @property
     def llm_is_claude(self) -> bool:

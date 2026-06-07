@@ -114,12 +114,35 @@
   .result-actions { display: flex; gap: 0.6rem; margin-top: 1rem; flex-wrap: wrap; }
   .badge { display: inline-block; font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); }
   .warn { color: var(--err); }
+
+  /* ── Mobile ─────────────────────────────────────────────────────────────── */
+  @media (max-width: 600px) {
+    header { padding: 1.25rem 0.75rem 0.75rem; }
+    header h1 { font-size: 1.6rem; }
+    header p { font-size: 0.9rem; }
+    .wrap { padding: 1rem 0.75rem 3rem; }
+    .card { padding: 1rem; }
+    #drop { padding: 1.75rem 0.75rem; }
+    #drop .big { font-size: 1rem; }
+    .options { gap: 0.85rem 1rem; }
+    .options label { font-size: 0.9rem; }
+    .options input[type=text] { width: 100%; }
+    button.primary { width: 100%; }
+    .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .tabs button { white-space: nowrap; }
+    #rendered { padding: 0.9rem 1rem; }
+    .gallery img { max-width: 46%; }
+    .result-actions .ghost { flex: 1 1 auto; text-align: center; }
+  }
 </style>
 </head>
 <body>
 <header>
   <h1>📜 History Scanner</h1>
   <p>OCR &amp; transcription for historical and handwritten documents, powered by marker</p>
+  <form id="logoutForm" method="post" action="/logout" style="display:none; margin-top:0.5rem;">
+    <button class="ghost" type="submit">Sign out</button>
+  </form>
 </header>
 
 <div class="wrap">
@@ -206,6 +229,7 @@ async function loadHealth() {
     $("useLlm").parentElement.title = "Set ANTHROPIC_API_KEY to enable LLM enhancement";
   }
   if (health.defaults) $("forceOcr").checked = !!health.defaults.force_ocr;
+  if (health.auth_enabled) $("logoutForm").style.display = "block";
   if (!health.marker_available) {
     setStatus("marker engine is not installed on the server. Run: pip install marker-pdf[full]", true);
   }
@@ -336,9 +360,22 @@ document.querySelectorAll(".tabs button").forEach(btn => {
 });
 
 $("copyBtn").addEventListener("click", async () => {
-  await navigator.clipboard.writeText($("raw").textContent);
-  $("copyBtn").textContent = "Copied!";
-  setTimeout(() => ($("copyBtn").textContent = "Copy text"), 1500);
+  const text = $("raw").textContent;
+  try {
+    // navigator.clipboard requires a secure context (HTTPS or localhost).
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+    }
+    $("copyBtn").textContent = "Copied!";
+  } catch (e) {
+    $("copyBtn").textContent = "Press ⌘/Ctrl+C";
+  }
+  setTimeout(() => ($("copyBtn").textContent = "Copy text"), 1800);
 });
 
 loadHealth();

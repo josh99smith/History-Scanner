@@ -35,7 +35,10 @@ VOLUME ["/models", "/data"]
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers + --forwarded-allow-ips let the app trust X-Forwarded-Proto
+# from a tunnel/reverse proxy, so HTTPS (and Secure cookies) are detected.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--proxy-headers", "--forwarded-allow-ips", "*"]
 
 # ── GPU note ──────────────────────────────────────────────────────────────────
 # For NVIDIA GPU acceleration:
