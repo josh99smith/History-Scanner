@@ -94,8 +94,11 @@ straight from the browser, so it can live 100% on GitHub Pages with no backend.
    never touches GitHub or any other server. Use "Forget" to clear it; avoid shared computers.
 2. Drop in document images or a PDF (multiple pages welcome).
 3. Pick a model — **Claude Opus 4.8** (best on hard handwriting) or **Sonnet 4.6** (cheaper/faster) —
-   toggle options (careful mode, preserve spelling, translate), and **Transcribe**. The Markdown
+   choose an **image size** (large images are downscaled in your browser before upload to cut token
+   cost), toggle options (careful mode, preserve spelling, translate), and **Transcribe**. The Markdown
    streams in live; copy or download it.
+4. A **live estimate** shows the approximate input cost before you scan, and the **actual cost**
+   (from real token usage) is shown after each transcription.
 
 ### Trade-offs vs the server edition
 

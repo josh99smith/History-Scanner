@@ -146,6 +146,14 @@
           <option value="claude-sonnet-4-6">Claude Sonnet 4.6 — faster &amp; cheaper</option>
         </select>
       </div>
+      <div>
+        <label class="field" for="maxEdge">Image size sent</label>
+        <select id="maxEdge" title="Bigger = more detail but more tokens/cost. Images are downscaled in your browser before upload.">
+          <option value="2576">High detail — up to 2576px</option>
+          <option value="1568" selected>Balanced — up to 1568px (recommended)</option>
+          <option value="1024">Compact — up to 1024px (cheapest)</option>
+        </select>
+      </div>
     </div>
 
     <div class="options">
@@ -161,6 +169,7 @@
       <textarea id="extra" placeholder="e.g. This is 18th-century German Kurrentschrift. Expand abbreviations. Note any marginal annotations."></textarea>
     </details>
 
+    <p class="muted" id="estimate" style="margin-bottom:0;"></p>
     <button class="primary" id="scanBtn" disabled>Transcribe</button>
   </div>
 
@@ -191,8 +200,33 @@ import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
 
 const $ = (id) => document.getElementById(id);
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-let files = [];          // {file, dataUrl}
+let files = [];          // {file, dataUrl, w, h}  (w/h set for images)
 let lastMarkdown = "";
+
+// USD per 1M tokens (input, output) — keep in sync with the model <option>s.
+const PRICING = {
+  "claude-opus-4-8": { in: 5, out: 25 },
+  "claude-sonnet-4-6": { in: 3, out: 15 },
+};
+// Anthropic's image-token approximation: ~ (width * height) / 750.
+const tokensForDims = (w, h) => Math.ceil((w * h) / 750);
+const fmtCost = (usd) => "$" + usd.toFixed(usd < 0.1 ? 4 : 2);
+
+function scaledDims(w, h, maxEdge) {
+  const longEdge = Math.max(w, h);
+  if (longEdge <= maxEdge) return { w, h };
+  const s = maxEdge / longEdge;
+  return { w: Math.round(w * s), h: Math.round(h * s) };
+}
+
+function loadImage(src) {
+  return new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = rej;
+    im.src = src;
+  });
+}
 
 const SYSTEM_PROMPT = `You are an expert paleographer and transcriptionist specialising in historical and handwritten documents. Transcribe the supplied document image(s) into clean, faithful Markdown.
 
@@ -239,7 +273,16 @@ function addFiles(fileList) {
     const ok = IMAGE_TYPES.includes(file.type) || file.type === "application/pdf";
     if (!ok) continue;
     const reader = new FileReader();
-    reader.onload = () => { files.push({ file, dataUrl: reader.result }); renderThumbs(); };
+    reader.onload = async () => {
+      const entry = { file, dataUrl: reader.result };
+      if (file.type !== "application/pdf") {
+        try { const im = await loadImage(reader.result); entry.w = im.naturalWidth; entry.h = im.naturalHeight; }
+        catch { /* dims unknown; estimate will skip it */ }
+      }
+      files.push(entry);
+      renderThumbs();
+      updateEstimate();
+    };
     reader.readAsDataURL(file);
   }
 }
@@ -255,10 +298,29 @@ function renderThumbs() {
       wrap.appendChild(img);
     }
     const rm = document.createElement("button"); rm.textContent = "×"; rm.title = "Remove";
-    rm.addEventListener("click", () => { files.splice(i, 1); renderThumbs(); });
+    rm.addEventListener("click", () => { files.splice(i, 1); renderThumbs(); updateEstimate(); });
     wrap.appendChild(rm); c.appendChild(wrap);
   });
   $("scanBtn").disabled = files.length === 0;
+}
+
+// Live pre-scan estimate based on the chosen image size and model.
+function updateEstimate() {
+  const el = $("estimate");
+  if (!files.length) { el.textContent = ""; return; }
+  const maxEdge = parseInt($("maxEdge").value, 10);
+  const price = PRICING[$("model").value] || PRICING["claude-opus-4-8"];
+  let imgTokens = 0, images = 0, pdfs = 0;
+  for (const f of files) {
+    if (f.file.type === "application/pdf") { pdfs++; continue; }
+    images++;
+    if (f.w && f.h) { const d = scaledDims(f.w, f.h, maxEdge); imgTokens += tokensForDims(d.w, d.h); }
+  }
+  const inputUsd = (imgTokens / 1e6) * price.in;
+  const bits = [];
+  if (images) bits.push(`${images} image${images > 1 ? "s" : ""} ≈ ${imgTokens.toLocaleString()} tokens (~${fmtCost(inputUsd)} input)`);
+  if (pdfs) bits.push(`${pdfs} PDF${pdfs > 1 ? "s" : ""} (cost varies by page count)`);
+  el.innerHTML = "Estimated input: " + bits.join(" + ") + ". Output billed separately.";
 }
 
 // ---- Build the user-turn instructions from the toggles ----
@@ -275,6 +337,24 @@ function buildInstructions() {
 
 function dataUrlToBase64(dataUrl) { return dataUrl.split(",")[1]; }
 
+// Downscale an image in-browser to cut upload size and token cost. Images already
+// within maxEdge are sent untouched (no re-encode, no quality loss).
+async function prepareImage(f, maxEdge) {
+  const im = await loadImage(f.dataUrl);
+  const longEdge = Math.max(im.naturalWidth, im.naturalHeight);
+  if (longEdge <= maxEdge) {
+    return { type: "image", source: { type: "base64", media_type: f.file.type, data: dataUrlToBase64(f.dataUrl) } };
+  }
+  const { w, h } = scaledDims(im.naturalWidth, im.naturalHeight, maxEdge);
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(im, 0, 0, w, h);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+  return { type: "image", source: { type: "base64", media_type: "image/jpeg", data: dataUrlToBase64(dataUrl) } };
+}
+
 // ---- Run ----
 $("scanBtn").addEventListener("click", run);
 
@@ -285,15 +365,15 @@ async function run() {
 
   $("result").style.display = "none";
   $("scanBtn").disabled = true;
-  setStatus("Sending to Claude…", false);
+  setStatus("Preparing images…", false);
 
+  const maxEdge = parseInt($("maxEdge").value, 10);
   const content = [];
   for (const f of files) {
-    const b64 = dataUrlToBase64(f.dataUrl);
     if (f.file.type === "application/pdf") {
-      content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } });
+      content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: dataUrlToBase64(f.dataUrl) } });
     } else {
-      content.push({ type: "image", source: { type: "base64", media_type: f.file.type, data: b64 } });
+      content.push(await prepareImage(f, maxEdge));
     }
   }
   content.push({ type: "text", text: buildInstructions() });
@@ -324,9 +404,18 @@ async function run() {
     const final = await stream.finalMessage();
     $("status").style.display = "none";
     const u = final.usage || {};
+    const price = PRICING[final.model] || PRICING[$("model").value] || PRICING["claude-opus-4-8"];
+    const inTok = (u.input_tokens || 0)
+      + (u.cache_read_input_tokens || 0)
+      + (u.cache_creation_input_tokens || 0);
+    const cost =
+      ((u.input_tokens || 0) * price.in
+        + (u.cache_read_input_tokens || 0) * price.in * 0.1
+        + (u.cache_creation_input_tokens || 0) * price.in * 1.25
+        + (u.output_tokens || 0) * price.out) / 1e6;
     const meta = [];
-    if (u.input_tokens != null) meta.push(`${u.input_tokens.toLocaleString()} in`);
-    if (u.output_tokens != null) meta.push(`${u.output_tokens.toLocaleString()} out tokens`);
+    meta.push(`${inTok.toLocaleString()} in / ${(u.output_tokens || 0).toLocaleString()} out tokens`);
+    meta.push(`~${fmtCost(cost)}`);
     meta.push($("model").value);
     if ($("careful").checked) meta.push("careful mode");
     $("resultMeta").textContent = meta.join(" • ");
@@ -380,6 +469,9 @@ $("downloadBtn").addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(a.href);
 });
+
+$("model").addEventListener("change", updateEstimate);
+$("maxEdge").addEventListener("change", updateEstimate);
 
 loadKey();
 </script>
