@@ -1,0 +1,36 @@
+services:
+  history-scanner:
+    build: .
+    image: history-scanner
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Sensible in-container defaults; .env (above) overrides these.
+      DATA_DIR: /data
+      HF_HOME: /models
+    volumes:
+      # Persist downloaded models (multi-GB) and OCR results across restarts.
+      - marker-models:/models
+      - scanner-data:/data
+    restart: unless-stopped
+
+  # GPU variant: `docker compose --profile gpu up history-scanner-gpu`
+  # Requires the NVIDIA Container Toolkit and a CUDA-based image (see Dockerfile).
+  history-scanner-gpu:
+    extends: history-scanner
+    profiles: ["gpu"]
+    environment:
+      TORCH_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  marker-models:
+  scanner-data:

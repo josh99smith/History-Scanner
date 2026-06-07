@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>History Scanner — OCR for historical & handwritten documents</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root {
+    --ink: #2b2118;
+    --parchment: #f4ecd8;
+    --parchment-dark: #e8dcc0;
+    --accent: #8a5a2b;
+    --accent-dark: #6b4420;
+    --border: #cbb894;
+    --ok: #3c7d4a;
+    --err: #a33b2a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    color: var(--ink);
+    background: var(--parchment);
+    background-image: radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px);
+    background-size: 4px 4px;
+    line-height: 1.55;
+  }
+  header {
+    text-align: center;
+    padding: 2rem 1rem 1rem;
+    border-bottom: 2px solid var(--border);
+  }
+  header h1 { margin: 0; font-size: 2.2rem; letter-spacing: 0.5px; }
+  header p { margin: 0.3rem 0 0; font-style: italic; opacity: 0.8; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+
+  .card {
+    background: var(--parchment-dark);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  }
+
+  #drop {
+    border: 2px dashed var(--accent);
+    border-radius: 8px;
+    padding: 2.5rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  #drop.drag { background: rgba(138,90,43,0.12); border-color: var(--accent-dark); }
+  #drop .big { font-size: 1.15rem; font-weight: 600; }
+  #drop .hint { opacity: 0.7; font-size: 0.9rem; margin-top: 0.4rem; }
+  #fileName { margin-top: 0.75rem; font-style: italic; }
+
+  .options { display: flex; flex-wrap: wrap; gap: 1.25rem; margin-top: 1.25rem; align-items: center; }
+  .options label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.95rem; }
+  .options select, .options input[type=text] {
+    font-family: inherit; padding: 0.3rem 0.5rem;
+    border: 1px solid var(--border); border-radius: 4px; background: #fff8ec;
+  }
+  .options input[type=text] { width: 7rem; }
+
+  button.primary {
+    margin-top: 1.25rem;
+    background: var(--accent); color: #fff8ec; border: none;
+    font-family: inherit; font-size: 1.05rem; font-weight: 600;
+    padding: 0.65rem 1.6rem; border-radius: 6px; cursor: pointer;
+    transition: background 0.15s;
+  }
+  button.primary:hover:not(:disabled) { background: var(--accent-dark); }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .ghost {
+    background: transparent; border: 1px solid var(--accent); color: var(--accent);
+    font-family: inherit; padding: 0.35rem 0.85rem; border-radius: 5px; cursor: pointer;
+  }
+  .ghost:hover { background: rgba(138,90,43,0.1); }
+
+  #status { display: none; }
+  .spinner {
+    display: inline-block; width: 1.1rem; height: 1.1rem; vertical-align: -2px;
+    border: 3px solid rgba(138,90,43,0.3); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.9s linear infinite; margin-right: 0.5rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error { color: var(--err); font-weight: 600; }
+  .meta { font-size: 0.85rem; opacity: 0.75; }
+
+  #result { display: none; }
+  .tabs { display: flex; gap: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+  .tabs button {
+    background: none; border: none; font-family: inherit; font-size: 0.95rem;
+    padding: 0.5rem 0.9rem; cursor: pointer; border-bottom: 3px solid transparent; color: var(--ink);
+  }
+  .tabs button.active { border-bottom-color: var(--accent); font-weight: 700; }
+  .pane { display: none; }
+  .pane.active { display: block; }
+  #rendered { background: #fff8ec; padding: 1.25rem 1.5rem; border: 1px solid var(--border); border-radius: 6px; }
+  #rendered img { max-width: 100%; }
+  #rendered table { border-collapse: collapse; }
+  #rendered td, #rendered th { border: 1px solid var(--border); padding: 0.3rem 0.6rem; }
+  pre#raw {
+    background: #2b2118; color: #f4ecd8; padding: 1rem; border-radius: 6px;
+    overflow: auto; white-space: pre-wrap; word-break: break-word; max-height: 60vh;
+    font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.85rem;
+  }
+  .gallery { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+  .gallery img { max-width: 160px; border: 1px solid var(--border); border-radius: 4px; }
+  .result-actions { display: flex; gap: 0.6rem; margin-top: 1rem; flex-wrap: wrap; }
+  .badge { display: inline-block; font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); }
+  .warn { color: var(--err); }
+</style>
+</head>
+<body>
+<header>
+  <h1>📜 History Scanner</h1>
+  <p>OCR &amp; transcription for historical and handwritten documents, powered by marker</p>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <div id="drop">
+      <div class="big">Drop a document here, or click to choose</div>
+      <div class="hint">PDF, JPG, PNG, TIFF, DOCX, EPUB… &nbsp;•&nbsp; max <span id="maxmb">50</span> MB</div>
+      <div id="fileName"></div>
+    </div>
+    <input type="file" id="fileInput" hidden />
+
+    <div class="options">
+      <label title="Use Claude to clean up and correct the OCR — best for handwriting">
+        <input type="checkbox" id="useLlm" />
+        ✨ LLM enhancement <span id="llmBadge" class="badge"></span>
+      </label>
+      <label title="Re-OCR every page instead of trusting any embedded text">
+        <input type="checkbox" id="forceOcr" checked />
+        Force OCR
+      </label>
+      <label>
+        Output
+        <select id="outputFormat">
+          <option value="markdown">Markdown</option>
+          <option value="html">HTML</option>
+          <option value="json">JSON</option>
+        </select>
+      </label>
+      <label title="Optional OCR language hints, comma separated, e.g. en,fr,la">
+        Languages
+        <input type="text" id="languages" placeholder="en,fr,la" />
+      </label>
+    </div>
+
+    <button class="primary" id="scanBtn" disabled>Transcribe document</button>
+  </div>
+
+  <div class="card" id="status">
+    <span class="spinner" id="statusSpinner"></span>
+    <span id="statusText">Working…</span>
+    <div class="meta" id="statusMeta"></div>
+  </div>
+
+  <div class="card" id="result">
+    <div class="tabs">
+      <button data-pane="rendered" class="active">Reading view</button>
+      <button data-pane="raw">Raw</button>
+      <button data-pane="images">Images</button>
+    </div>
+    <div class="pane active" id="paneRendered"><div id="rendered"></div></div>
+    <div class="pane" id="paneRaw"><pre id="raw"></pre></div>
+    <div class="pane" id="paneImages"><div class="gallery" id="gallery"></div></div>
+    <div class="result-actions">
+      <button class="ghost" id="copyBtn">Copy text</button>
+      <a class="ghost" id="downloadBtn" href="#" download>Download</a>
+      <span class="meta" id="resultMeta"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let selectedFile = null;
+let pollTimer = null;
+let health = null;
+
+async function loadHealth() {
+  try {
+    health = await (await fetch("/api/health")).json();
+  } catch (e) { health = null; }
+  if (!health) return;
+  $("maxmb").textContent = health.max_upload_mb;
+  const llm = health.llm || {};
+  const badge = $("llmBadge");
+  if (llm.configured) {
+    $("useLlm").checked = !!(health.defaults && health.defaults.use_llm);
+    badge.textContent = llm.is_claude ? (llm.model || "Claude") : llm.service;
+    badge.title = "LLM service: " + llm.service;
+  } else {
+    $("useLlm").checked = false;
+    $("useLlm").disabled = true;
+    badge.textContent = "no API key";
+    badge.classList.add("warn");
+    $("useLlm").parentElement.title = "Set ANTHROPIC_API_KEY to enable LLM enhancement";
+  }
+  if (health.defaults) $("forceOcr").checked = !!health.defaults.force_ocr;
+  if (!health.marker_available) {
+    setStatus("marker engine is not installed on the server. Run: pip install marker-pdf[full]", true);
+  }
+}
+
+function pickFile(f) {
+  selectedFile = f;
+  $("fileName").textContent = f ? `Selected: ${f.name} (${(f.size/1024/1024).toFixed(2)} MB)` : "";
+  $("scanBtn").disabled = !f;
+}
+
+const drop = $("drop");
+drop.addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", (e) => pickFile(e.target.files[0] || null));
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("drag"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("drag"); }));
+drop.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) pickFile(e.dataTransfer.files[0]); });
+
+function setStatus(msg, isError) {
+  $("status").style.display = "block";
+  $("statusSpinner").style.display = isError ? "none" : "inline-block";
+  $("statusText").innerHTML = isError ? `<span class="error">⚠ ${msg}</span>` : msg;
+}
+
+$("scanBtn").addEventListener("click", async () => {
+  if (!selectedFile) return;
+  $("result").style.display = "none";
+  $("scanBtn").disabled = true;
+  setStatus("Uploading…", false);
+
+  const fd = new FormData();
+  fd.append("file", selectedFile);
+  fd.append("use_llm", $("useLlm").checked);
+  fd.append("force_ocr", $("forceOcr").checked);
+  fd.append("output_format", $("outputFormat").value);
+  fd.append("languages", $("languages").value.trim());
+
+  try {
+    const res = await fetch("/api/scan", { method: "POST", body: fd });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Upload failed");
+    setStatus("Queued for transcription…", false);
+    poll(body.job_id);
+  } catch (e) {
+    setStatus(e.message, true);
+    $("scanBtn").disabled = false;
+  }
+});
+
+function poll(jobId) {
+  clearInterval(pollTimer);
+  const started = Date.now();
+  pollTimer = setInterval(async () => {
+    let job;
+    try { job = await (await fetch(`/api/jobs/${jobId}`)).json(); }
+    catch (e) { return; }
+    const secs = Math.round((Date.now() - started) / 1000);
+    if (job.status === "queued" || job.status === "processing") {
+      const verb = job.status === "queued" ? "Queued" : "Transcribing";
+      setStatus(`${verb}… (${secs}s elapsed)`, false);
+      $("statusMeta").textContent = job.options.use_llm ? "LLM enhancement on — this can take a little longer." : "";
+    } else if (job.status === "done") {
+      clearInterval(pollTimer);
+      $("scanBtn").disabled = false;
+      $("status").style.display = "none";
+      showResult(jobId, job);
+    } else if (job.status === "error") {
+      clearInterval(pollTimer);
+      $("scanBtn").disabled = false;
+      setStatus(job.error || "Transcription failed", true);
+    }
+  }, 1500);
+}
+
+function showResult(jobId, job) {
+  const fmt = job.options.output_format;
+  const text = job.text || "";
+  // Rewrite relative image refs to the job's image endpoint.
+  const imgBase = `/api/jobs/${jobId}/images/`;
+  if (fmt === "markdown") {
+    let md = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, src) =>
+      `![${alt}](${imgBase}${src.split("/").pop()})`);
+    $("rendered").innerHTML = window.marked ? marked.parse(md) : `<pre>${escapeHtml(text)}</pre>`;
+  } else if (fmt === "html") {
+    let html = text.replace(/(src=")([^"]+)(")/g, (m, a, src, b) =>
+      a + imgBase + src.split("/").pop() + b);
+    $("rendered").innerHTML = html;
+  } else {
+    $("rendered").innerHTML = `<pre>${escapeHtml(text)}</pre>`;
+  }
+  $("raw").textContent = text;
+
+  const gallery = $("gallery");
+  gallery.innerHTML = "";
+  (job.images || []).forEach(name => {
+    const img = document.createElement("img");
+    img.src = imgBase + name;
+    img.alt = name;
+    gallery.appendChild(img);
+  });
+  if (!(job.images || []).length) gallery.innerHTML = "<p class='meta'>No embedded images extracted.</p>";
+
+  const dl = $("downloadBtn");
+  dl.href = `/api/jobs/${jobId}/download`;
+  dl.textContent = `Download .${({markdown:"md",html:"html",json:"json"})[fmt]}`;
+
+  const parts = [];
+  if (job.page_count) parts.push(`${job.page_count} page(s)`);
+  if (job.duration != null) parts.push(`${job.duration}s`);
+  if (job.options.use_llm) parts.push("LLM-enhanced");
+  $("resultMeta").textContent = parts.join(" • ");
+
+  $("result").style.display = "block";
+  $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+}
+
+document.querySelectorAll(".tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    $("pane" + btn.dataset.pane.charAt(0).toUpperCase() + btn.dataset.pane.slice(1)).classList.add("active");
+  });
+});
+
+$("copyBtn").addEventListener("click", async () => {
+  await navigator.clipboard.writeText($("raw").textContent);
+  $("copyBtn").textContent = "Copied!";
+  setTimeout(() => ($("copyBtn").textContent = "Copy text"), 1500);
+});
+
+loadHealth();
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# Core OCR / document intelligence engine.
+# The [full] extra adds support for images, DOCX, PPTX, XLSX, EPUB, HTML inputs.
+# This pulls in PyTorch and the surya OCR/layout models as transitive deps.
+marker-pdf[full]>=1.6.0
+
+# Web layer
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9

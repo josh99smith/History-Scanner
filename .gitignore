@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Marker downloads its models here on first run (multi-GB) – never commit
+.cache/
+models/
+datalab/
+
+# App runtime data (uploads + results)
+/tmp/history-scanner/
+data/
+*.log
+
+# Secrets
+.env
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
