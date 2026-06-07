@@ -8,6 +8,23 @@ handwriting and faded historical text.
 
 <p align="center"><em>Drag in a scan → get back searchable, structured text.</em></p>
 
+## Two editions
+
+This repo contains **two** ways to run History Scanner:
+
+1. **Browser edition (`docs/`) — hostable entirely on GitHub Pages.** A static single-page
+   app that calls **Claude's vision API directly from your browser** to transcribe documents.
+   No server, no Python, no marker — just open the page, paste your own Anthropic API key
+   (stored only in your browser), and scan. Best for "all on GitHub Pages." See
+   [Browser edition on GitHub Pages](#browser-edition-on-github-pages).
+2. **Server edition (`app/`) — the marker-powered app** described below. Runs the full
+   [marker](https://github.com/datalab-to/marker) pipeline locally/Docker for the highest-fidelity
+   structured output (tables, layout, JSON), with optional Claude LLM enhancement.
+
+Both target historical and handwritten documents — pick based on whether you want a
+zero-infrastructure hosted page (browser edition) or maximum-fidelity local processing
+(server edition).
+
 ## Features
 
 - **Drag-and-drop web UI** — works from a desktop or phone browser.
@@ -56,6 +73,37 @@ docker compose --profile gpu up history-scanner-gpu
 ```
 
 [NVIDIA Container Toolkit]: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+
+## Browser edition on GitHub Pages
+
+The `docs/` folder is a **fully static app** — it runs the OCR by calling Claude's vision API
+straight from the browser, so it can live 100% on GitHub Pages with no backend.
+
+### Deploy it
+
+1. Push this repo to GitHub.
+2. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+   The included workflow (`.github/workflows/pages.yml`) publishes `docs/` on every push to `main`.
+   *(Alternative with no Actions: set Source to “Deploy from a branch”, branch `main`, folder `/docs`.)*
+3. Open `https://<your-username>.github.io/<repo-name>/` — works great on mobile.
+
+### Use it
+
+1. Paste your **own** Anthropic API key (from [console.anthropic.com](https://console.anthropic.com/)).
+   It is stored **only in your browser's `localStorage`** and sent **directly to Anthropic** — it
+   never touches GitHub or any other server. Use "Forget" to clear it; avoid shared computers.
+2. Drop in document images or a PDF (multiple pages welcome).
+3. Pick a model — **Claude Opus 4.8** (best on hard handwriting) or **Sonnet 4.6** (cheaper/faster) —
+   toggle options (careful mode, preserve spelling, translate), and **Transcribe**. The Markdown
+   streams in live; copy or download it.
+
+### Trade-offs vs the server edition
+
+- ✅ Zero infrastructure, free hosting, runs on any device, excellent on handwriting/historical script.
+- ✅ Your key never leaves your browser (the page is static; there's no server to leak it).
+- ⚠️ Not a full marker pipeline — no structured JSON/HTML, table-extraction, or page-stats objects;
+  it produces clean Markdown text. For maximum-fidelity structured output, use the server edition.
+- ⚠️ Each scan uses your Anthropic API credits.
 
 ## 📱 View it on your phone (public hosting)
 

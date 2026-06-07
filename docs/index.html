@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>History Scanner — browser OCR for historical &amp; handwritten documents</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root {
+    --ink: #2b2118; --parchment: #f4ecd8; --parchment-dark: #e8dcc0;
+    --accent: #8a5a2b; --accent-dark: #6b4420; --border: #cbb894;
+    --ok: #3c7d4a; --err: #a33b2a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; color: var(--ink); background: var(--parchment);
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    background-image: radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px);
+    background-size: 4px 4px; line-height: 1.55;
+  }
+  header { text-align: center; padding: 2rem 1rem 1rem; border-bottom: 2px solid var(--border); }
+  header h1 { margin: 0; font-size: 2.2rem; }
+  header p { margin: 0.3rem 0 0; font-style: italic; opacity: 0.8; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+  .card {
+    background: var(--parchment-dark); border: 1px solid var(--border); border-radius: 8px;
+    padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  }
+  label.field { display: block; font-weight: 600; margin-bottom: 0.35rem; }
+  input[type=password], input[type=text], select, textarea {
+    width: 100%; font-family: inherit; font-size: 0.95rem; padding: 0.55rem 0.7rem;
+    border: 1px solid var(--border); border-radius: 5px; background: #fff8ec; color: var(--ink);
+  }
+  textarea { resize: vertical; min-height: 3rem; }
+  .row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end; }
+  .row > div { flex: 1 1 12rem; }
+  .muted { font-size: 0.85rem; opacity: 0.75; }
+  .keyrow { display: flex; gap: 0.5rem; align-items: center; }
+  .keyrow input { flex: 1; }
+
+  #drop {
+    border: 2px dashed var(--accent); border-radius: 8px; padding: 2.25rem 1rem;
+    text-align: center; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  }
+  #drop.drag { background: rgba(138,90,43,0.12); border-color: var(--accent-dark); }
+  #drop .big { font-size: 1.1rem; font-weight: 600; }
+  #drop .hint { opacity: 0.7; font-size: 0.9rem; margin-top: 0.4rem; }
+  #thumbs { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.9rem; }
+  .thumb { position: relative; }
+  .thumb img, .thumb .pdf {
+    width: 84px; height: 84px; object-fit: cover; border: 1px solid var(--border);
+    border-radius: 5px; background: #fff8ec; display: flex; align-items: center;
+    justify-content: center; font-size: 0.75rem; text-align: center; padding: 4px;
+  }
+  .thumb button {
+    position: absolute; top: -8px; right: -8px; width: 20px; height: 20px; border-radius: 50%;
+    border: none; background: var(--err); color: #fff; cursor: pointer; line-height: 1; font-size: 0.8rem;
+  }
+
+  .options { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; margin-top: 1rem; }
+  .options label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.95rem; }
+
+  button.primary {
+    margin-top: 1.25rem; background: var(--accent); color: #fff8ec; border: none;
+    font-family: inherit; font-size: 1.05rem; font-weight: 600; padding: 0.65rem 1.6rem;
+    border-radius: 6px; cursor: pointer; transition: background 0.15s;
+  }
+  button.primary:hover:not(:disabled) { background: var(--accent-dark); }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .ghost {
+    background: transparent; border: 1px solid var(--accent); color: var(--accent);
+    font-family: inherit; padding: 0.35rem 0.85rem; border-radius: 5px; cursor: pointer; text-decoration: none;
+  }
+  .ghost:hover { background: rgba(138,90,43,0.1); }
+
+  #status { display: none; }
+  .spinner {
+    display: inline-block; width: 1.1rem; height: 1.1rem; vertical-align: -2px; margin-right: 0.5rem;
+    border: 3px solid rgba(138,90,43,0.3); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error { color: var(--err); font-weight: 600; }
+
+  #result { display: none; }
+  .tabs { display: flex; gap: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; overflow-x: auto; }
+  .tabs button {
+    background: none; border: none; font-family: inherit; font-size: 0.95rem; white-space: nowrap;
+    padding: 0.5rem 0.9rem; cursor: pointer; border-bottom: 3px solid transparent; color: var(--ink);
+  }
+  .tabs button.active { border-bottom-color: var(--accent); font-weight: 700; }
+  .pane { display: none; } .pane.active { display: block; }
+  #rendered { background: #fff8ec; padding: 1.25rem 1.5rem; border: 1px solid var(--border); border-radius: 6px; min-height: 4rem; }
+  #rendered table { border-collapse: collapse; } #rendered td, #rendered th { border: 1px solid var(--border); padding: 0.3rem 0.6rem; }
+  pre#raw {
+    background: #2b2118; color: #f4ecd8; padding: 1rem; border-radius: 6px; overflow: auto;
+    white-space: pre-wrap; word-break: break-word; max-height: 60vh; font-size: 0.85rem;
+    font-family: "SFMono-Regular", Consolas, monospace;
+  }
+  .result-actions { display: flex; gap: 0.6rem; margin-top: 1rem; flex-wrap: wrap; align-items: center; }
+  .badge { display: inline-block; font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); }
+  details summary { cursor: pointer; font-weight: 600; }
+
+  @media (max-width: 600px) {
+    header h1 { font-size: 1.6rem; } .wrap { padding: 1rem 0.75rem 3rem; } .card { padding: 1rem; }
+    button.primary { width: 100%; } .result-actions .ghost { flex: 1 1 auto; text-align: center; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>📜 History Scanner</h1>
+  <p>In-browser OCR &amp; transcription for historical and handwritten documents, powered by Claude</p>
+</header>
+
+<div class="wrap">
+  <!-- API key -->
+  <div class="card">
+    <label class="field" for="apiKey">Anthropic API key</label>
+    <div class="keyrow">
+      <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off" spellcheck="false" />
+      <button class="ghost" id="saveKey">Save</button>
+      <button class="ghost" id="forgetKey">Forget</button>
+    </div>
+    <p class="muted" id="keyMsg">
+      Your key is stored only in this browser (localStorage) and sent directly to Anthropic — it never touches any
+      other server. Get one at <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a>.
+      Don't use this on a shared/public computer.
+    </p>
+  </div>
+
+  <!-- Upload -->
+  <div class="card">
+    <div id="drop">
+      <div class="big">Drop document images or a PDF here, or click to choose</div>
+      <div class="hint">JPG, PNG, WEBP, GIF, or PDF &nbsp;•&nbsp; multiple pages welcome</div>
+    </div>
+    <input type="file" id="fileInput" accept="image/*,application/pdf" multiple hidden />
+    <div id="thumbs"></div>
+
+    <div class="row" style="margin-top:1rem;">
+      <div>
+        <label class="field" for="model">Model</label>
+        <select id="model">
+          <option value="claude-opus-4-8">Claude Opus 4.8 — best accuracy (recommended)</option>
+          <option value="claude-sonnet-4-6">Claude Sonnet 4.6 — faster &amp; cheaper</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="options">
+      <label title="Let Claude reason about ambiguous characters — better on tough handwriting, a little slower/costlier">
+        <input type="checkbox" id="careful" checked /> 🧠 Careful mode
+      </label>
+      <label title="Keep original spelling, punctuation and capitalisation"><input type="checkbox" id="preserve" checked /> Preserve original spelling</label>
+      <label title="Append a modern-English translation after the transcription"><input type="checkbox" id="translate" /> Add English translation</label>
+    </div>
+
+    <details style="margin-top:0.9rem;">
+      <summary>Extra instructions (optional)</summary>
+      <textarea id="extra" placeholder="e.g. This is 18th-century German Kurrentschrift. Expand abbreviations. Note any marginal annotations."></textarea>
+    </details>
+
+    <button class="primary" id="scanBtn" disabled>Transcribe</button>
+  </div>
+
+  <!-- Status -->
+  <div class="card" id="status">
+    <span class="spinner" id="statusSpinner"></span>
+    <span id="statusText">Working…</span>
+  </div>
+
+  <!-- Result -->
+  <div class="card" id="result">
+    <div class="tabs">
+      <button data-pane="rendered" class="active">Reading view</button>
+      <button data-pane="raw">Raw Markdown</button>
+    </div>
+    <div class="pane active" id="paneRendered"><div id="rendered"></div></div>
+    <div class="pane" id="paneRaw"><pre id="raw"></pre></div>
+    <div class="result-actions">
+      <button class="ghost" id="copyBtn">Copy text</button>
+      <button class="ghost" id="downloadBtn">Download .md</button>
+      <span class="muted" id="resultMeta"></span>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
+
+const $ = (id) => document.getElementById(id);
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+let files = [];          // {file, dataUrl}
+let lastMarkdown = "";
+
+const SYSTEM_PROMPT = `You are an expert paleographer and transcriptionist specialising in historical and handwritten documents. Transcribe the supplied document image(s) into clean, faithful Markdown.
+
+Rules:
+- Transcribe ALL legible text. Preserve the original line breaks of headings, verses, addresses and signatures; reflow ordinary prose into natural paragraphs.
+- Preserve structure: headings, paragraphs, lists, and tables (as GitHub Markdown tables). Render marginalia as a blockquote prefixed with "> [margin]". Note stamps/seals as "[seal: ...]".
+- For an uncertain reading, give your best guess followed by [?]. For text you cannot read, use [illegible]. For physically missing/damaged text, use [...].
+- Do NOT summarise, comment, or add anything that is not in the document. Output only the transcription (plus a translation only if explicitly requested).
+- If multiple images are provided, treat them as consecutive pages: transcribe each in order, separated by a "---" rule and a "## Page N" heading.`;
+
+// ---- API key handling ----
+const KEY_STORE = "history_scanner_api_key";
+function loadKey() {
+  const k = localStorage.getItem(KEY_STORE);
+  if (k) { $("apiKey").value = k; }
+}
+$("saveKey").addEventListener("click", () => {
+  const k = $("apiKey").value.trim();
+  if (!k) return;
+  localStorage.setItem(KEY_STORE, k);
+  flashKeyMsg("Saved to this browser.");
+});
+$("forgetKey").addEventListener("click", () => {
+  localStorage.removeItem(KEY_STORE);
+  $("apiKey").value = "";
+  flashKeyMsg("Key removed from this browser.");
+});
+function flashKeyMsg(msg) {
+  const el = $("keyMsg"); const prev = el.innerHTML;
+  el.textContent = msg;
+  setTimeout(() => (el.innerHTML = prev), 2500);
+}
+
+// ---- File handling ----
+const drop = $("drop");
+drop.addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", (e) => addFiles(e.target.files));
+["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("drag"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("drag"); }));
+drop.addEventListener("drop", (e) => addFiles(e.dataTransfer.files));
+
+function addFiles(fileList) {
+  for (const file of fileList) {
+    const ok = IMAGE_TYPES.includes(file.type) || file.type === "application/pdf";
+    if (!ok) continue;
+    const reader = new FileReader();
+    reader.onload = () => { files.push({ file, dataUrl: reader.result }); renderThumbs(); };
+    reader.readAsDataURL(file);
+  }
+}
+function renderThumbs() {
+  const c = $("thumbs"); c.innerHTML = "";
+  files.forEach((f, i) => {
+    const wrap = document.createElement("div"); wrap.className = "thumb";
+    if (f.file.type === "application/pdf") {
+      const d = document.createElement("div"); d.className = "pdf"; d.textContent = "📄 " + f.file.name;
+      wrap.appendChild(d);
+    } else {
+      const img = document.createElement("img"); img.src = f.dataUrl; img.alt = f.file.name;
+      wrap.appendChild(img);
+    }
+    const rm = document.createElement("button"); rm.textContent = "×"; rm.title = "Remove";
+    rm.addEventListener("click", () => { files.splice(i, 1); renderThumbs(); });
+    wrap.appendChild(rm); c.appendChild(wrap);
+  });
+  $("scanBtn").disabled = files.length === 0;
+}
+
+// ---- Build the user-turn instructions from the toggles ----
+function buildInstructions() {
+  const parts = ["Transcribe the document(s)."];
+  parts.push($("preserve").checked
+    ? "Preserve the original spelling, punctuation and capitalisation exactly."
+    : "Modernise the spelling and punctuation to standard contemporary form while keeping the meaning.");
+  if ($("translate").checked) parts.push("After the transcription, add a section titled '## English translation' with a faithful modern-English translation.");
+  const extra = $("extra").value.trim();
+  if (extra) parts.push(extra);
+  return parts.join(" ");
+}
+
+function dataUrlToBase64(dataUrl) { return dataUrl.split(",")[1]; }
+
+// ---- Run ----
+$("scanBtn").addEventListener("click", run);
+
+async function run() {
+  const apiKey = $("apiKey").value.trim();
+  if (!apiKey) { flashKeyMsg("Enter your Anthropic API key first."); $("apiKey").focus(); return; }
+  if (!files.length) return;
+
+  $("result").style.display = "none";
+  $("scanBtn").disabled = true;
+  setStatus("Sending to Claude…", false);
+
+  const content = [];
+  for (const f of files) {
+    const b64 = dataUrlToBase64(f.dataUrl);
+    if (f.file.type === "application/pdf") {
+      content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } });
+    } else {
+      content.push({ type: "image", source: { type: "base64", media_type: f.file.type, data: b64 } });
+    }
+  }
+  content.push({ type: "text", text: buildInstructions() });
+
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+
+  const params = {
+    model: $("model").value,
+    max_tokens: 16000,
+    system: SYSTEM_PROMPT,
+    thinking: $("careful").checked ? { type: "adaptive" } : { type: "disabled" },
+    messages: [{ role: "user", content }],
+  };
+
+  // Stream so the transcription appears live and long pages don't time out.
+  lastMarkdown = "";
+  $("rendered").innerHTML = ""; $("raw").textContent = "";
+  $("result").style.display = "block";
+  setStatus("Transcribing…", false);
+
+  try {
+    const stream = client.messages.stream(params);
+    stream.on("text", (delta) => {
+      lastMarkdown += delta;
+      $("raw").textContent = lastMarkdown;
+      $("rendered").innerHTML = window.marked ? marked.parse(lastMarkdown) : escapeHtml(lastMarkdown);
+    });
+    const final = await stream.finalMessage();
+    $("status").style.display = "none";
+    const u = final.usage || {};
+    const meta = [];
+    if (u.input_tokens != null) meta.push(`${u.input_tokens.toLocaleString()} in`);
+    if (u.output_tokens != null) meta.push(`${u.output_tokens.toLocaleString()} out tokens`);
+    meta.push($("model").value);
+    if ($("careful").checked) meta.push("careful mode");
+    $("resultMeta").textContent = meta.join(" • ");
+  } catch (err) {
+    handleError(err);
+  } finally {
+    $("scanBtn").disabled = false;
+  }
+}
+
+function handleError(err) {
+  let msg = err?.message || String(err);
+  const status = err?.status;
+  if (status === 401) msg = "Invalid API key (401). Check the key and try again.";
+  else if (status === 429) msg = "Rate limited (429). Wait a moment and retry.";
+  else if (status === 400 && /credit|billing/i.test(msg)) msg = "Your Anthropic account needs credit/billing set up.";
+  else if (err?.name === "TypeError" || /Failed to fetch|NetworkError/i.test(msg))
+    msg = "Network/CORS error reaching Anthropic. Check your connection and that the key is valid.";
+  setStatus(msg, true);
+}
+
+function setStatus(msg, isError) {
+  $("status").style.display = "block";
+  $("statusSpinner").style.display = isError ? "none" : "inline-block";
+  $("statusText").innerHTML = isError ? `<span class="error">⚠ ${escapeHtml(msg)}</span>` : escapeHtml(msg);
+}
+function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+// ---- Tabs / copy / download ----
+document.querySelectorAll(".tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    $("pane" + btn.dataset.pane.charAt(0).toUpperCase() + btn.dataset.pane.slice(1)).classList.add("active");
+  });
+});
+$("copyBtn").addEventListener("click", async () => {
+  try {
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(lastMarkdown);
+    else { const ta = document.createElement("textarea"); ta.value = lastMarkdown; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+    $("copyBtn").textContent = "Copied!";
+  } catch { $("copyBtn").textContent = "Press Ctrl/⌘+C"; }
+  setTimeout(() => ($("copyBtn").textContent = "Copy text"), 1800);
+});
+$("downloadBtn").addEventListener("click", () => {
+  const blob = new Blob([lastMarkdown], { type: "text/markdown" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "transcription.md";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+loadKey();
+</script>
+</body>
+</html>
