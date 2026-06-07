@@ -95,8 +95,15 @@ straight from the browser, so it can live 100% on GitHub Pages with no backend.
 2. Drop in document images or a PDF (multiple pages welcome).
 3. Pick a model — **Claude Opus 4.8** (best on hard handwriting) or **Sonnet 4.6** (cheaper/faster) —
    choose an **image size** (large images are downscaled in your browser before upload to cut token
-   cost), toggle options (careful mode, preserve spelling, translate), and **Transcribe**. The Markdown
-   streams in live; copy or download it.
+   cost), set the **document language** and an optional **translation** target, toggle options
+   (careful mode, preserve spelling), and **Transcribe**. The Markdown streams in live; copy or download it.
+
+   - **Languages & translation:** set *Document language* to guide OCR on historical scripts —
+     e.g. **German** triggers tailored handling of Kurrentschrift/Sütterlin handwriting, Fraktur
+     print, long-s (ſ), ß, and umlauts. Set *Translate to* (currently **English**) to append a
+     faithful modern translation after the transcription. The first supported pair is
+     **German → English**; more languages are a one-line addition in `docs/index.html`
+     (`LANGUAGES` / `TRANSLATE_TARGETS`).
 4. A **live estimate** shows the approximate input cost before you scan, and the **actual cost**
    (from real token usage) is shown after each transcription.
 

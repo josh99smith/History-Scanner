@@ -156,12 +156,22 @@
       </div>
     </div>
 
+    <div class="row" style="margin-top:1rem;">
+      <div>
+        <label class="field" for="srcLang">Document language</label>
+        <select id="srcLang" title="Helps Claude with historical scripts (e.g. German Kurrentschrift / Fraktur)"></select>
+      </div>
+      <div>
+        <label class="field" for="tgtLang">Translate to</label>
+        <select id="tgtLang" title="Adds a translation section after the transcription"></select>
+      </div>
+    </div>
+
     <div class="options">
       <label title="Let Claude reason about ambiguous characters — better on tough handwriting, a little slower/costlier">
         <input type="checkbox" id="careful" checked /> 🧠 Careful mode
       </label>
       <label title="Keep original spelling, punctuation and capitalisation"><input type="checkbox" id="preserve" checked /> Preserve original spelling</label>
-      <label title="Append a modern-English translation after the transcription"><input type="checkbox" id="translate" /> Add English translation</label>
     </div>
 
     <details style="margin-top:0.9rem;">
@@ -202,6 +212,27 @@ const $ = (id) => document.getElementById(id);
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 let files = [];          // {file, dataUrl, w, h}  (w/h set for images)
 let lastMarkdown = "";
+
+// Document languages. Each may carry `guidance` appended to the request to help
+// Claude with historical scripts/orthography. Add a new pair by adding an entry.
+const LANGUAGES = {
+  auto: { label: "Auto-detect" },
+  de: {
+    label: "German",
+    guidance: "The document is in German and likely historical. Expect Kurrentschrift or Sütterlin handwriting, or Fraktur print; the long-s (ſ), the ß ligature, umlauts (sometimes written aͤ/oͤ/uͤ or ae/oe/ue), and common period abbreviations. Transcribe the German faithfully using modern Unicode (ä, ö, ü, ß).",
+  },
+  fr: { label: "French", guidance: "The document is in French and may be historical; transcribe accents and older orthography faithfully." },
+  la: { label: "Latin", guidance: "The document is in Latin; expect scribal abbreviations and ligatures — expand them only when unambiguous, otherwise transcribe as written and mark with [?] if unsure." },
+  es: { label: "Spanish", guidance: "The document is in Spanish and may be historical." },
+  it: { label: "Italian", guidance: "The document is in Italian and may be historical." },
+  nl: { label: "Dutch", guidance: "The document is in Dutch and may be historical." },
+};
+
+// Translation targets. Start with English; add more by extending this map.
+const TRANSLATE_TARGETS = {
+  none: "No translation",
+  en: "English",
+};
 
 // USD per 1M tokens (input, output) — keep in sync with the model <option>s.
 const PRICING = {
@@ -326,10 +357,24 @@ function updateEstimate() {
 // ---- Build the user-turn instructions from the toggles ----
 function buildInstructions() {
   const parts = ["Transcribe the document(s)."];
+
+  const src = $("srcLang").value;
+  if (src !== "auto" && LANGUAGES[src] && LANGUAGES[src].guidance) parts.push(LANGUAGES[src].guidance);
+
   parts.push($("preserve").checked
     ? "Preserve the original spelling, punctuation and capitalisation exactly."
     : "Modernise the spelling and punctuation to standard contemporary form while keeping the meaning.");
-  if ($("translate").checked) parts.push("After the transcription, add a section titled '## English translation' with a faithful modern-English translation.");
+
+  const tgt = $("tgtLang").value;
+  if (tgt !== "none") {
+    const lang = TRANSLATE_TARGETS[tgt];
+    parts.push(
+      `After the transcription, add a section titled '## ${lang} translation' containing a faithful, fluent modern ${lang} translation of the entire document. ` +
+      `Preserve the structure (headings, paragraphs, lists). Keep proper names, place names and dates as written. ` +
+      `Where a word or passage is ambiguous or could be read more than one way, add a short translator's note in [square brackets].`
+    );
+  }
+
   const extra = $("extra").value.trim();
   if (extra) parts.push(extra);
   return parts.join(" ");
@@ -418,6 +463,8 @@ async function run() {
     meta.push(`~${fmtCost(cost)}`);
     meta.push($("model").value);
     if ($("careful").checked) meta.push("careful mode");
+    const src = $("srcLang").value, tgt = $("tgtLang").value;
+    if (tgt !== "none") meta.push(`${src === "auto" ? "auto" : LANGUAGES[src].label} → ${TRANSLATE_TARGETS[tgt]}`);
     $("resultMeta").textContent = meta.join(" • ");
   } catch (err) {
     handleError(err);
@@ -470,9 +517,27 @@ $("downloadBtn").addEventListener("click", () => {
   URL.revokeObjectURL(a.href);
 });
 
+function populateLangSelects() {
+  const src = $("srcLang");
+  for (const [code, info] of Object.entries(LANGUAGES)) {
+    const o = document.createElement("option");
+    o.value = code; o.textContent = info.label;
+    if (code === "auto") o.selected = true;
+    src.appendChild(o);
+  }
+  const tgt = $("tgtLang");
+  for (const [code, label] of Object.entries(TRANSLATE_TARGETS)) {
+    const o = document.createElement("option");
+    o.value = code; o.textContent = label;
+    if (code === "none") o.selected = true;
+    tgt.appendChild(o);
+  }
+}
+
 $("model").addEventListener("change", updateEstimate);
 $("maxEdge").addEventListener("change", updateEstimate);
 
+populateLangSelects();
 loadKey();
 </script>
 </body>
